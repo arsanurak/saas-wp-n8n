@@ -157,7 +157,7 @@ services:
       timeout: 10s
       retries: 10
     ports:
-      - 8080:80
+      - 8081:80
   mariadb:
     image: 'mariadb:11'
     networks: ['demo']
