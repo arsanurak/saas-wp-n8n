@@ -1,11 +1,16 @@
 version: '3.8'
+
 volumes:
   n8n_storage:
   postgres_storage:
   ollama_storage:
   qdrant_storage:
+  wordpress_storage:
+  mariadb_storage:
+
 networks:
   demo:
+
 x-n8n: &service-n8n
   image: n8nio/n8n:latest
   networks: ['demo']
@@ -22,6 +27,7 @@ x-n8n: &service-n8n
   depends_on:
     postgres:
       condition: service_healthy
+
 x-ollama: &service-ollama
   image: ollama/ollama:latest
   networks: ['demo']
@@ -30,6 +36,7 @@ x-ollama: &service-ollama
     - 11434:11434
   volumes:
     - ollama_storage:/root/.ollama
+
 services:
   postgres:
     image: postgres:16-alpine
@@ -49,6 +56,7 @@ services:
       start_period: 30s
     ports:
       - "5433:5432"
+
   n8n-import:
     <<: *service-n8n
     container_name: n8n-import
@@ -72,6 +80,7 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+
   n8n:
     <<: *service-n8n
     container_name: n8n
@@ -98,6 +107,7 @@ services:
         echo 'Dependencies are ready. Starting n8n...'
         sleep 5
         n8n
+
   qdrant:
     image: qdrant/qdrant
     container_name: qdrant
@@ -107,9 +117,11 @@ services:
       - 6333:6333
     volumes:
       - qdrant_storage:/qdrant/storage
+
   ollama:
     <<: *service-ollama
     container_name: ollama
+
   ollama-init:
     image: ollama/ollama:latest
     networks: ['demo']
@@ -121,3 +133,46 @@ services:
       - "sleep 10; OLLAMA_HOST=ollama:11434 ollama pull llama3.1; OLLAMA_HOST=ollama:11434 ollama pull nomic-embed-text"
     depends_on:
       - ollama
+
+  wordpress:
+    image: 'wordpress:latest'
+    networks: ['demo']
+    volumes:
+      - 'wordpress_storage:/var/www/html'
+    environment:
+      - SERVICE_FQDN_WORDPRESS
+      - WORDPRESS_DB_HOST=mariadb
+      - WORDPRESS_DB_USER=$SERVICE_USER_WORDPRESS
+      - WORDPRESS_DB_PASSWORD=$SERVICE_PASSWORD_WORDPRESS
+      - WORDPRESS_DB_NAME=wordpress
+    depends_on:
+      - mariadb
+    healthcheck:
+      test:
+        - CMD
+        - curl
+        - '-f'
+        - 'http://127.0.0.1'
+      interval: 2s
+      timeout: 10s
+      retries: 10
+
+  mariadb:
+    image: 'mariadb:11'
+    networks: ['demo']
+    volumes:
+      - 'mariadb_storage:/var/lib/mysql'
+    environment:
+      - MYSQL_ROOT_PASSWORD=$SERVICE_PASSWORD_ROOT
+      - MYSQL_DATABASE=wordpress
+      - MYSQL_USER=$SERVICE_USER_WORDPRESS
+      - MYSQL_PASSWORD=$SERVICE_PASSWORD_WORDPRESS
+    healthcheck:
+      test:
+        - CMD
+        - healthcheck.sh
+        - '--connect'
+        - '--innodb_initialized'
+      interval: 5s
+      timeout: 20s
+      retries: 10
