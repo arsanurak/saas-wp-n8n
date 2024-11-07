@@ -1,0 +1,81 @@
+function get_n8n_data(WP_REST_Request $request) {
+    $user_id = $request->get_param('user_id');
+    $api_key = $request->get_param('api_key');
+    $data = $request->get_param('data'); // New parameter for data to send to n8n
+
+    if (!validate_user_api_key($user_id, $api_key)) {
+        return new WP_REST_Response(array(
+            'status' => 'fail',
+            'message' => 'Invalid User ID or API Key'
+        ), 401);
+    }
+
+    // Check if user has enough credits
+    $required_points = 10;
+    $current_balance = mycred_get_users_balance($user_id);
+
+    if ($current_balance < $required_points) {
+        return new WP_REST_Response(array(
+            'status' => 'fail',
+            'message' => 'Insufficient points balance',
+            'current_balance' => $current_balance
+        ), 403);
+    }
+
+    // Prepare data for n8n webhook
+    $n8n_data = array(
+        'data' => $data
+    );
+
+    // Call the n8n webhook
+    $n8n_webhook_url = 'http://n8n:5678/webhook/test';
+    $response = wp_remote_post($n8n_webhook_url, array(
+        'method' => 'POST',
+        'body' => json_encode($n8n_data),
+        'headers' => array(
+            'Content-Type' => 'application/json'
+        )
+    ));
+
+    // Check if the webhook call was successful
+    if (is_wp_error($response)) {
+        return new WP_REST_Response(array(
+            'status' => 'fail',
+            'message' => 'Error calling n8n webhook',
+            'error' => $response->get_error_message()
+        ), 500);
+    }
+
+    // Decode the response body
+    $n8n_response_body = json_decode(wp_remote_retrieve_body($response), true);
+
+    // Check if the response is valid JSON
+    if ($n8n_response_body === null && json_last_error() !== JSON_ERROR_NONE) {
+        return new WP_REST_Response(array(
+            'status' => 'fail',
+            'message' => 'Invalid JSON response from n8n webhook',
+            'raw_response' => wp_remote_retrieve_body($response)
+        ), 500);
+    }
+
+    // Deduct points for successful API call
+    mycred_subtract('get_n8n_data', $user_id, $required_points);
+
+    // Final response including n8n data
+    return new WP_REST_Response(array(
+        'status' => 'success',
+        'data' => array(
+            'n8n_response' => $n8n_response_body
+        ),
+        'points_deducted' => $required_points,
+        'new_balance' => mycred_get_users_balance($user_id)
+    ), 200);
+}
+
+add_action('rest_api_init', function () {
+    register_rest_route('n8n-api/v1', '/get-n8n-data', array(
+        'methods' => 'POST',
+        'callback' => 'get_n8n_data',
+        'permission_callback' => '__return_true',
+    ));
+});

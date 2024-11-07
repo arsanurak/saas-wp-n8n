@@ -1,0 +1,133 @@
+function register_custom_api_endpoint() {
+    register_rest_route('custom/v1', '/check-balance', array(
+        'methods' => 'POST',
+        'callback' => 'check_user_balance',
+        'permission_callback' => '__return_true', // Handle permissions inside the callback
+    ));
+}
+add_action('rest_api_init', 'register_custom_api_endpoint');
+
+function validate_user_api_key($user_id, $api_key) {
+    // Get the stored API key from user meta
+    $stored_api_key = get_user_meta($user_id, 'api_key', true);
+
+    // Compare the provided API key with the stored API key
+    if ($stored_api_key && $stored_api_key === $api_key) {
+        return true;
+    }
+
+    return false;
+}
+
+function check_user_balance(WP_REST_Request $request) {
+    // Get parameters from the request
+    $user_id = $request->get_param('user_id');
+    $api_key = $request->get_param('api_key');
+    $required_points = 50; // Set your required points threshold here
+
+    // Validate the user ID and API key
+    if (!validate_user_api_key($user_id, $api_key)) {
+        return new WP_REST_Response(array(
+            'status' => 'fail',
+            'message' => 'Invalid User ID or API Key'
+        ), 401);
+    }
+
+    // Get the user's points balance using MyCred
+    if (function_exists('mycred_get_users_balance')) {
+        $points_balance = mycred_get_users_balance($user_id);
+    } else {
+        return new WP_REST_Response(array(
+            'status' => 'fail',
+            'message' => 'MyCred plugin is not active or function not available'
+        ), 500);
+    }
+
+    // Check if the points balance is larger than the required points
+    if ($points_balance >= $required_points) {
+        return new WP_REST_Response(array(
+            'status' => 'success',
+            'message' => 'Sufficient points balance',
+            'points_balance' => $points_balance
+        ), 200);
+    } else {
+        return new WP_REST_Response(array(
+            'status' => 'fail',
+            'message' => 'Insufficient points balance',
+            'points_balance' => $points_balance
+        ), 403);
+    }
+}
+
+
+
+function register_simulate_api_call_endpoint() {
+    register_rest_route('custom/v1', '/api-call', array(
+        'methods' => 'POST',
+        'callback' => 'simulate_api_call',
+        'permission_callback' => '__return_true',
+    ));
+}
+add_action('rest_api_init', 'register_simulate_api_call_endpoint');
+
+
+function simulate_api_call(WP_REST_Request $request) {
+    // Get parameters from the request
+    $user_id = $request->get_param('user_id');
+    $api_key = $request->get_param('api_key');
+    $points_to_deduct = 50; // Points to deduct on successful API call
+
+    // Validate the user ID and API key
+    if (!validate_user_api_key($user_id, $api_key)) {
+        return new WP_REST_Response(array(
+            'status' => 'fail',
+            'message' => 'Invalid User ID or API Key'
+        ), 401);
+    }
+
+    // Simulate an external API call (e.g., a simple success response)
+    $api_success = true; // Simulate a successful API response
+
+    if ($api_success) {
+        // Get the user's current points balance using MyCred
+        if (function_exists('mycred_get_users_balance')) {
+            $current_balance = mycred_get_users_balance($user_id);
+        } else {
+            return new WP_REST_Response(array(
+                'status' => 'fail',
+                'message' => 'MyCred plugin is not active or function not available'
+            ), 500);
+        }
+
+        // Check if the user has enough points
+        if ($current_balance < $points_to_deduct) {
+            return new WP_REST_Response(array(
+                'status' => 'fail',
+                'message' => 'Insufficient points balance',
+                'current_balance' => $current_balance
+            ), 403);
+        }
+
+        // Deduct the points from the user's balance
+        if (function_exists('mycred_subtract')) {
+            mycred_subtract('simulate_api_call', $user_id, $points_to_deduct);
+            $new_balance = mycred_get_users_balance($user_id);
+
+            return new WP_REST_Response(array(
+                'status' => 'success',
+                'message' => 'API call successful, points deducted',
+                'new_balance' => $new_balance
+            ), 200);
+        } else {
+            return new WP_REST_Response(array(
+                'status' => 'fail',
+                'message' => 'Failed to deduct points, MyCred function not available'
+            ), 500);
+        }
+    } else {
+        return new WP_REST_Response(array(
+            'status' => 'fail',
+            'message' => 'API call failed'
+        ), 500);
+    }
+}

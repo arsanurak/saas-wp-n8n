@@ -1,0 +1,75 @@
+function generate_acf_user_api_key($user_id) {
+    // Generate a unique API key
+    $api_key = bin2hex(random_bytes(16));
+
+    // Update the ACF field with the generated API key
+    update_field('api_key', $api_key, 'user_' . $user_id);
+}
+add_action('user_register', 'generate_acf_user_api_key');
+
+function regenerate_user_api_key() {
+    // Check if the user is logged in
+    if (!is_user_logged_in()) {
+        return;
+    }
+
+    // Get the current user's ID
+    $user_id = get_current_user_id();
+
+    // Generate a new API key
+    $new_api_key = bin2hex(random_bytes(16));
+
+    // Update the ACF field with the new API key
+    update_field('api_key', $new_api_key, 'user_' . $user_id);
+
+    // Redirect to the same page to avoid form resubmission
+    wp_redirect($_SERVER['REQUEST_URI']);
+    exit;
+}
+
+function display_acf_user_api_key_with_regenerate() {
+    // Check if the user is logged in
+    if (!is_user_logged_in()) {
+        return '<p>You need to be logged in to see your API key and User ID.</p>';
+    }
+
+    // Handle the API key regeneration
+    if (isset($_POST['regenerate_api_key'])) {
+        regenerate_user_api_key();
+    }
+
+    // Get the current user's ID
+    $user_id = get_current_user_id();
+
+    // Retrieve the API key using ACF
+    $api_key = get_field('api_key', 'user_' . $user_id);
+
+    // Output the API key, user ID, and the regeneration form with copy icons
+    ob_start();
+    ?>
+    <p><strong>User ID:</strong> 
+        <span id="user-id"><?php echo esc_html($user_id); ?></span>
+        <button type="button" onclick="copyToClipboard('user-id')">📋</button>
+    </p>
+    <p><strong>API Key:</strong> 
+        <span id="api-key"><?php echo esc_html($api_key); ?></span>
+        <button type="button" onclick="copyToClipboard('api-key')">📋</button>
+    </p>
+    <form method="post">
+        <input type="submit" name="regenerate_api_key" value="Regenerate API Key" />
+    </form>
+
+    <script>
+        function copyToClipboard(elementId) {
+            const text = document.getElementById(elementId).innerText;
+            navigator.clipboard.writeText(text).then(() => {
+                alert('Copied to clipboard');
+            }).catch(err => {
+                console.error('Could not copy text: ', err);
+            });
+        }
+    </script>
+    <?php
+    return ob_get_clean();
+}
+add_shortcode('show_acf_api_key_with_regenerate', 'display_acf_user_api_key_with_regenerate');
